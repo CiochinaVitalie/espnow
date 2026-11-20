@@ -12,6 +12,13 @@ struct sht40 {
     i2c_master_dev_handle_t dev;
 };
 
+/* Waits at least `ms`. vTaskDelay(n) returns after n-1..n ticks, and pdMS_TO_TICKS rounds
+ * down (0 for 2 ms at 100 Hz), so round up and add one tick. */
+static void delay_at_least_ms(uint32_t ms)
+{
+    vTaskDelay(pdMS_TO_TICKS(ms) + 1);
+}
+
 /* CRC-8, poly 0x31, init 0xFF (Sensirion). */
 static uint8_t crc8(const uint8_t *d, int n)
 {
@@ -43,7 +50,7 @@ esp_err_t sht40_init(i2c_master_bus_handle_t bus, uint8_t addr, sht40_handle_t *
     if (err == ESP_OK) {
         uint8_t cmd = SHT40_CMD_SOFT_RESET;
         err = i2c_master_transmit(h->dev, &cmd, 1, SHT40_TIMEOUT_MS);
-        vTaskDelay(pdMS_TO_TICKS(2)); /* reset takes <1 ms */
+        delay_at_least_ms(2); /* reset takes <1 ms */
         if (err != ESP_OK) {
             i2c_master_bus_rm_device(h->dev);
         }
@@ -63,7 +70,7 @@ esp_err_t sht40_read(sht40_handle_t h, float *temp_c, float *rh)
     if (err != ESP_OK) {
         return err;
     }
-    vTaskDelay(pdMS_TO_TICKS(10)); /* high precision: max 8.3 ms */
+    delay_at_least_ms(10); /* high precision: max 8.3 ms */
     err = i2c_master_receive(h->dev, buf, sizeof(buf), SHT40_TIMEOUT_MS);
     if (err != ESP_OK) {
         return err;
@@ -85,7 +92,7 @@ esp_err_t sht40_read_serial(sht40_handle_t h, uint32_t *serial)
     if (err != ESP_OK) {
         return err;
     }
-    vTaskDelay(pdMS_TO_TICKS(2));
+    delay_at_least_ms(2);
     err = i2c_master_receive(h->dev, buf, sizeof(buf), SHT40_TIMEOUT_MS);
     if (err != ESP_OK) {
         return err;
