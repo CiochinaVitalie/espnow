@@ -28,12 +28,13 @@ esp_err_t sensors_init(void)
     if (err != ESP_OK) {
         return err;
     }
-    for (int m = 0; m < MUX_COUNT; m++) {
-        err = tca9548a_init(bus, s_mux_addr[m], &s_mux[m]);
+    int ready = 0; /* muxes successfully created */
+    for (; ready < MUX_COUNT; ready++) {
+        err = tca9548a_init(bus, s_mux_addr[ready], &s_mux[ready]);
         if (err != ESP_OK) {
-            return err;
+            goto fail;
         }
-        tca9548a_set_mask(s_mux[m], 0);
+        tca9548a_set_mask(s_mux[ready], 0);
     }
     /* init does a soft reset, so a sensor must be reachable: use the first channel that answers. */
     for (int i = 0; i < SENSORS_COUNT; i++) {
@@ -44,7 +45,16 @@ esp_err_t sensors_init(void)
         }
         tca9548a_set_mask(mux, 0);
     }
-    return ESP_ERR_NOT_FOUND;
+    err = ESP_ERR_NOT_FOUND;
+
+fail:
+    /* Release everything so sensors_init() can be called again. */
+    for (int m = 0; m < ready; m++) {
+        tca9548a_deinit(s_mux[m]);
+        s_mux[m] = NULL;
+    }
+    i2c_del_master_bus(bus);
+    return err;
 }
 
 void sensors_read_all(sensor_data_t out[SENSORS_COUNT])

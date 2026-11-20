@@ -11,14 +11,10 @@
 #include "sensors.h"
 #include "sensors_packet.h"
 
-// ====================================================================
-// НАСТРОЙКА РОЛИ (Раскомментируйте ТОЛЬКО ОДНУ строку для нужной платы)
-// ====================================================================
-#define ROLE_SENDER     // Сделайте вот так, чтобы прошить ПЕРЕДАТЧИК
-// #define ROLE_RECEIVER   // Раскомментируйте это (и закомментируйте строку выше) для ПРИЕМНИКА
-
-// !!! ВСТАВЬТЕ СЮДА MAC-АДРЕС ПРИЕМНИКА (вы увидите его в логах приемника) !!!
-static uint8_t receiver_mac[] = {0x08, 0x3A, 0xf2, 0xac, 0x52, 0xfc}; 
+// Роль и MAC приемника задаются в menuconfig: "Sensor node configuration".
+#ifdef CONFIG_ESPNOW_ROLE_SENDER
+#define ROLE_SENDER
+#endif
 
 #ifdef ROLE_SENDER
 static const char *TAG = "SENDER";
@@ -60,6 +56,16 @@ void on_data_sent(const esp_now_send_info_t *send_info, esp_now_send_status_t st
 }
 
 void app_main(void) {
+    uint8_t receiver_mac[6];
+    unsigned m[6];
+    if (sscanf(CONFIG_ESPNOW_RECEIVER_MAC, "%x:%x:%x:%x:%x:%x", &m[0], &m[1], &m[2], &m[3], &m[4], &m[5]) != 6) {
+        ESP_LOGE(TAG, "Неверный формат CONFIG_ESPNOW_RECEIVER_MAC: \"%s\"", CONFIG_ESPNOW_RECEIVER_MAC);
+        return;
+    }
+    for (int i = 0; i < 6; i++) {
+        receiver_mac[i] = (uint8_t)m[i];
+    }
+
     init_wifi_and_espnow();
     ESP_LOGI(TAG, "Запуск в режиме ПЕРЕДАТЧИКА");
 
@@ -74,7 +80,12 @@ void app_main(void) {
 
     ESP_ERROR_CHECK(esp_now_add_peer(&peer_info)); // при ошибке перезагрузка, а не молчаливый выход
 
-    ESP_ERROR_CHECK(sensors_init());
+    // Не перезагружаемся, если мультиплексор/датчики не найдены: повторяем попытку.
+    esp_err_t err;
+    while ((err = sensors_init()) != ESP_OK) {
+        ESP_LOGE(TAG, "Инициализация датчиков не удалась: %s. Повтор через 5 с", esp_err_to_name(err));
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
 
     uint16_t seq = 0;
     sensor_data_t data[SENSORS_COUNT];
